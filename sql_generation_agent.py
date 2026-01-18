@@ -6,23 +6,17 @@ import ollama
 import tempfile
 from pathlib import Path
 
-# ---------------------------------------
-# USER CONFIGURATION
-# ---------------------------------------
 CSV_FILE = "transformation_spec.csv"
 
 GIT_REPO_URL = "https://github.com/AlluriSangameshwar/transformations_dbt.git"
 GIT_BRANCH = "main"
 
-MODEL_NAME = "phi3:mini"  # ✅ lightweight local model
-
+MODEL_NAME = "phi3:mini"
 
 TEMP_BASE_DIR = tempfile.gettempdir()
 MODEL_NAME = "phi3:mini"
 CSV_FILE = "transformation_spec.csv"
-# ---------------------------------------
-# STEP 1: READ INPUT METADATA (CSV)
-# ---------------------------------------
+
 def load_metadata(csv_file):
     try:
         return pd.read_csv(csv_file)
@@ -31,9 +25,7 @@ def load_metadata(csv_file):
     except Exception as e:
         raise RuntimeError(f"Failed to read CSV: {e}")
 
-# ---------------------------------------
-# STEP 2: GROUP ROWS BY TARGET TABLE
-# ---------------------------------------
+
 def group_by_target_table(df):
     grouped = defaultdict(list)
 
@@ -43,9 +35,7 @@ def group_by_target_table(df):
 
     return grouped
 
-# ---------------------------------------
-# STEP 3: BUILD PROMPT FOR LLM
-# ---------------------------------------
+
 def build_prompt(target_key, rows):
     tgt_dataset, tgt_table = target_key
 
@@ -97,10 +87,6 @@ REQUIREMENTS:
 """
     return prompt.strip()
 
-
-# ---------------------------------------
-# STEP 4: CALL LOCAL LLM (PHI-MINI)
-# ---------------------------------------
 def generate_sql(prompt):
     try:
         response = ollama.chat(
@@ -117,9 +103,7 @@ def generate_sql(prompt):
     except Exception as e:
         raise RuntimeError(f"Ollama SQL generation failed: {e}")
 
-# ---------------------------------------
-# STEP 5: WRITE SQL FILE
-# ---------------------------------------
+
 def write_sql(repo_path, table, sql):
     output_dir = os.path.join(repo_path, "generated_sql")
     os.makedirs(output_dir, exist_ok=True)
@@ -130,23 +114,6 @@ def write_sql(repo_path, table, sql):
         f.write(sql.strip() + "\n")
 
     return file_path
-
-# ---------------------------------------
-# STEP 6: GIT COMMIT & PUSH
-# ---------------------------------------
-# def commit_and_push(repo_path, files):
-#     try:
-#         repo = Repo(repo_path)
-#         repo.git.checkout(GIT_BRANCH)
-#
-#         for f in files:
-#             repo.git.add(f)
-#
-#         repo.index.commit("Auto-generated BigQuery SQL via AI agent")
-#         repo.remote(name="origin").push()
-#
-#     except GitCommandError as e:
-#         raise RuntimeError(f"Git operation failed: {e}")
 
 
 from pathlib import Path
@@ -170,22 +137,17 @@ def commit_and_push(repo_path, files):
         if repo.is_dirty():
             repo.index.commit("AI: auto-generate BigQuery SQL")
             repo.remote("origin").push()
-            print("✅ SQL committed & pushed to transformations_dbt")
+            print("SQL committed & pushed to transformations_dbt")
         else:
-            print("ℹ️ No changes detected")
+            print("No changes detected")
 
     except GitCommandError as e:
         raise RuntimeError(f"Git operation failed: {e}")
 
 
-
-
-# ---------------------------------------
-# MAIN EXECUTION
-# ---------------------------------------
 def main():
     try:
-        print("🚀 Starting AI SQL generator")
+        print("Starting AI SQL generator")
 
         df = load_metadata(CSV_FILE)
         grouped_tables = group_by_target_table(df)
@@ -218,10 +180,10 @@ def main():
 
         commit_and_push(temp_repo_path, generated_files)
 
-        print("✅ SQL generated & pushed (no local artifacts created)")
+        print("SQL generated & pushed (no local artifacts created)")
 
     except Exception as e:
-        print(f"❌ Failed: {e}")
+        print(f"Failed: {e}")
 
 if __name__ == "__main__":
     main()
