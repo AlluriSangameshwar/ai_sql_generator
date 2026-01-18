@@ -3,6 +3,7 @@ import os
 from collections import defaultdict
 from git import Repo, GitCommandError
 import ollama
+from pathlib import Path
 
 # ---------------------------------------
 # USER CONFIGURATION
@@ -13,7 +14,7 @@ GIT_REPO_URL = "https://github.com/AlluriSangameshwar/transformations_dbt.git"
 LOCAL_REPO_PATH = "./transformations_dbt"
 GIT_BRANCH = "main"
 
-MODEL_NAME = "phi-mini"   # ✅ lightweight local model
+MODEL_NAME = "phi3:mini"  # ✅ lightweight local model
 
 # ---------------------------------------
 # STEP 1: READ INPUT METADATA (CSV)
@@ -102,6 +103,7 @@ def generate_sql(prompt):
                 "num_ctx": 2048
             }
         )
+        print(response["message"]["content"].strip())
         return response["message"]["content"].strip()
 
     except Exception as e:
@@ -116,27 +118,59 @@ def write_sql(repo_path, dataset, table, sql):
 
     file_path = os.path.join(folder_path, f"{table}.sql")
 
-    with open(file_path, "w") as f:
-        f.write(sql)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(sql.strip() + "\n")
 
     return file_path
 
 # ---------------------------------------
 # STEP 6: GIT COMMIT & PUSH
 # ---------------------------------------
+# def commit_and_push(repo_path, files):
+#     try:
+#         repo = Repo(repo_path)
+#         repo.git.checkout(GIT_BRANCH)
+#
+#         for f in files:
+#             repo.git.add(f)
+#
+#         repo.index.commit("Auto-generated BigQuery SQL via AI agent")
+#         repo.remote(name="origin").push()
+#
+#     except GitCommandError as e:
+#         raise RuntimeError(f"Git operation failed: {e}")
+
+
+from pathlib import Path
+from git import Repo, GitCommandError
+
 def commit_and_push(repo_path, files):
     try:
         repo = Repo(repo_path)
+
+        # 🚿 Force clean state
+        repo.git.fetch("origin")
         repo.git.checkout(GIT_BRANCH)
+        repo.git.reset("--hard", f"origin/{GIT_BRANCH}")
+
+        repo_root = Path(repo_path).resolve()
 
         for f in files:
-            repo.git.add(f)
+            rel_path = Path(f).resolve().relative_to(repo_root)
+            repo.git.add(str(rel_path))
 
-        repo.index.commit("Auto-generated BigQuery SQL via AI agent")
-        repo.remote(name="origin").push()
+        if repo.is_dirty():
+            repo.index.commit("AI: auto-generate BigQuery SQL")
+            repo.remote("origin").push()
+            print("✅ SQL committed & pushed to transformations_dbt")
+        else:
+            print("ℹ️ No changes detected")
 
     except GitCommandError as e:
         raise RuntimeError(f"Git operation failed: {e}")
+
+
+
 
 # ---------------------------------------
 # MAIN EXECUTION
