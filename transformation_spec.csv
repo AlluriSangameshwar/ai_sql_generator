@@ -1,0 +1,4 @@
+row_id,src_project,src_dataset,src_table,src_column,src_datatype,tgt_dataset,tgt_table,tgt_column,tgt_datatype,transformation_rule,filter_condition,load_type,watermark_column
+1,raw_prj,fdp_staging,transactions,txn_id,STRING,fdp,transactions_fact,transaction_id,STRING,direct mapping,,full,
+2,raw_prj,fdp_staging,transactions,amount,NUMERIC,fdp,transactions_fact,total_amount,NUMERIC,round to 2 decimals,,full,
+3,raw_prj,fdp_staging,transactions,event_ts,TIMESTAMP,fdp,transactions_fact,transaction_time,DATETIME,convert UTC timestamp to IST,event_ts IS NOT NULL,incremental,updated_at
