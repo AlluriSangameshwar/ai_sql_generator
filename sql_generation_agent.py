@@ -3,6 +3,7 @@ import os
 from collections import defaultdict
 from git import Repo, GitCommandError
 import ollama
+import tempfile
 from pathlib import Path
 
 # ---------------------------------------
@@ -11,11 +12,14 @@ from pathlib import Path
 CSV_FILE = "transformation_spec.csv"
 
 GIT_REPO_URL = "https://github.com/AlluriSangameshwar/transformations_dbt.git"
-LOCAL_REPO_PATH = "./transformations_dbt"
 GIT_BRANCH = "main"
 
 MODEL_NAME = "phi3:mini"  # ✅ lightweight local model
 
+
+TEMP_BASE_DIR = tempfile.gettempdir()
+MODEL_NAME = "phi3:mini"
+CSV_FILE = "transformation_spec.csv"
 # ---------------------------------------
 # STEP 1: READ INPUT METADATA (CSV)
 # ---------------------------------------
@@ -62,6 +66,9 @@ def build_prompt(target_key, rows):
 You are a BigQuery SQL expert.
 
 Generate a BigQuery SELECT query using the rules below.
+**Do not use Markdown, code fences, or any extra formatting.**
+**Do not include CREATE or INSERT statements.**
+**Use TIMESTAMP_ADD for time arithmetic, IS_NAN for numeric checks, and proper backticks for table references.**
 
 SOURCE:
 {src_project}.{src_dataset}.{src_table}
@@ -82,13 +89,14 @@ WATERMARK COLUMN:
 {watermark}
 
 REQUIREMENTS:
-- BigQuery SQL only
-- SELECT statement only (no CREATE / INSERT)
+- BigQuery Standard SQL only
+- SELECT statement only
 - Proper column aliases
-- If incremental load, use dbt is_incremental() logic
-- Output ONLY SQL
+- Incremental load: use dbt is_incremental() logic
+- Output ONLY SQL, no Markdown or triple backticks
 """
     return prompt.strip()
+
 
 # ---------------------------------------
 # STEP 4: CALL LOCAL LLM (PHI-MINI)
@@ -112,11 +120,11 @@ def generate_sql(prompt):
 # ---------------------------------------
 # STEP 5: WRITE SQL FILE
 # ---------------------------------------
-def write_sql(repo_path, dataset, table, sql):
-    folder_path = os.path.join(repo_path, "models", dataset)
-    os.makedirs(folder_path, exist_ok=True)
+def write_sql(repo_path, table, sql):
+    output_dir = os.path.join(repo_path, "generated_sql")
+    os.makedirs(output_dir, exist_ok=True)
 
-    file_path = os.path.join(folder_path, f"{table}.sql")
+    file_path = os.path.join(output_dir, f"{table}.sql")
 
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(sql.strip() + "\n")
@@ -177,36 +185,43 @@ def commit_and_push(repo_path, files):
 # ---------------------------------------
 def main():
     try:
-        print("🚀 Starting SQL generation agent")
+        print("🚀 Starting AI SQL generator")
 
         df = load_metadata(CSV_FILE)
         grouped_tables = group_by_target_table(df)
 
-        if not os.path.exists(LOCAL_REPO_PATH):
-            print("📥 Cloning dbt repo")
-            Repo.clone_from(GIT_REPO_URL, LOCAL_REPO_PATH)
+        # 🧊 Clone repo into TEMP directory
+        temp_repo_path = os.path.join(
+            TEMP_BASE_DIR,
+            "ai_sql_push_repo"
+        )
+
+        if os.path.exists(temp_repo_path):
+            Repo(temp_repo_path).git.reset("--hard")
+        else:
+            Repo.clone_from(GIT_REPO_URL, temp_repo_path, branch=GIT_BRANCH)
 
         generated_files = []
 
-        for target_key, rows in grouped_tables.items():
-            print(f"⚙️ Generating SQL for {target_key[0]}.{target_key[1]}")
-            prompt = build_prompt(target_key, rows)
+        for (tgt_dataset, tgt_table), rows in grouped_tables.items():
+            print(f"⚙️ Generating SQL for {tgt_table}")
+
+            prompt = build_prompt((tgt_dataset, tgt_table), rows)
             sql = generate_sql(prompt)
 
             file_path = write_sql(
-                LOCAL_REPO_PATH,
-                target_key[0],
-                target_key[1],
+                temp_repo_path,
+                tgt_table,
                 sql
             )
             generated_files.append(file_path)
 
-        commit_and_push(LOCAL_REPO_PATH, generated_files)
+        commit_and_push(temp_repo_path, generated_files)
 
-        print("✅ BigQuery SQL generated and pushed successfully")
+        print("✅ SQL generated & pushed (no local artifacts created)")
 
     except Exception as e:
-        print(f"❌ Pipeline failed: {e}")
+        print(f"❌ Failed: {e}")
 
 if __name__ == "__main__":
     main()
